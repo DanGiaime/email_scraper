@@ -7,8 +7,10 @@ const foundEmails = [];
 const searchedUrls = {};
 const currentPageNestedUrls = [];
 
-const maxDepth = 3;
+const maxDepth = 2;
 let numParsed = 0;
+
+let domainRegex = /^(?:https?:\/\/)?(?:[^@\n]+@)?(?:www\.)?([^:\/\n?]+)/img;
 
 let inputPath = './test.csv';
 
@@ -16,7 +18,7 @@ let wrapper = async () => {
     fs.readFile(inputPath, function (err, fileData) {
         parse(fileData, {columns: false, trim: true}, async function(err, rows) {
             if(err) console.error(err);
-            run(rows.slice(0, 2)).then(() => {
+            await run(rows.flat()).then(() => {
               console.log(foundEmails);
             })
             .catch((err) => console.error(err));;
@@ -29,13 +31,14 @@ const run = async (urls) => {
   const browser = await puppeteer.launch();
 
   const page = await browser.newPage();
+  let currDomain;
 
   while (urls.length || currentPageNestedUrls.length) {
     // We shift the nested urls because we need to look at them in the order
     // they were added, so that the depth goes in order. Otherwise, we might
     // cache the page as viewed at the max depth, but we were really supposed to
     // look at it in an earlier depth too, and find nested links.
-    const next = currentPageNestedUrls.shift() || urls.pop();
+    const next = currentPageNestedUrls.shift() || urls.shift();
     console.log(`Parsed ${next}: Total parsed so far: ${++numParsed}`);
 
     // Assume `next` is a string
@@ -60,6 +63,10 @@ const run = async (urls) => {
     }
 
     try {
+
+      // Pull out domain from current URL
+      let currDomain = nextUrl.match(domainRegex);
+
       // Cache the url so we don't search it again in the future
       searchedUrls[nextUrl] = true;
 
@@ -71,6 +78,7 @@ const run = async (urls) => {
 
       // Get all the links on the page
       const links = await page.$$("a");
+      console.log(`Nested links found: ${links.length}`);
 
       for (var i = 0; i < links.length; i++) {
         // Get the value of the href property from the link
@@ -85,7 +93,7 @@ const run = async (urls) => {
         }
 
         // Check if we should search the found page for more links
-        if (currentDepth < maxDepth) {
+        if (currentDepth < maxDepth && href.includes(currDomain)) {
           // We are not at the max depth, add it to the list to be searched
           currentPageNestedUrls.push([href, currentDepth]);
         }
