@@ -1,14 +1,31 @@
 const puppeteer = require("puppeteer");
+const fs = require('fs');
+var parse = require('csv-parse');
 
 const foundEmails = [];
 
-const urls = ["https://www.outagebuddy.com"];
 const searchedUrls = {};
 const currentPageNestedUrls = [];
 
 const maxDepth = 3;
+let numParsed = 0;
 
-const run = async () => {
+let inputPath = './test.csv';
+
+let wrapper = async () => {
+    fs.readFile(inputPath, function (err, fileData) {
+        parse(fileData, {columns: false, trim: true}, async function(err, rows) {
+            if(err) console.error(err);
+            run(rows.slice(0, 2)).then(() => {
+              console.log(foundEmails);
+            })
+            .catch((err) => console.error(err));;
+
+        })
+    })
+};
+
+const run = async (urls) => {
   const browser = await puppeteer.launch();
 
   const page = await browser.newPage();
@@ -19,6 +36,7 @@ const run = async () => {
     // cache the page as viewed at the max depth, but we were really supposed to
     // look at it in an earlier depth too, and find nested links.
     const next = currentPageNestedUrls.shift() || urls.pop();
+    console.log(`Parsed ${next}: Total parsed so far: ${++numParsed}`);
 
     // Assume `next` is a string
     let nextUrl = next;
@@ -91,8 +109,4 @@ const run = async () => {
   await browser.close();
 };
 
-run()
-  .then(() => {
-    console.log(foundEmails);
-  })
-  .catch((err) => console.error(err));
+wrapper();
