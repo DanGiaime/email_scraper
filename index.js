@@ -9,24 +9,39 @@ const currentPageNestedUrls = [];
 
 const maxDepth = 2;
 let numParsed = 0;
+const maxNestedLinks = 10;
 
 let domainRegex = /^(?:https?:\/\/)?(?:[^@\n]+@)?(?:www\.)?([^:\/\n?]+)/img;
-
+let bizType = "Hair Salons";
 let inputPath = './test.csv';
 
+// Main function, needed for async
 let wrapper = async () => {
     fs.readFile(inputPath, function (err, fileData) {
-        parse(fileData, {columns: false, trim: true}, async function(err, rows) {
+        return parse(fileData, {columns: false, trim: true}, async function(err, rows) {
             if(err) console.error(err);
-            await run(rows.flat()).then(() => {
+            run(rows.flat().slice(0, 1)).then(() => {
               console.log(foundEmails);
-            })
-            .catch((err) => console.error(err));;
-
+              return fileWrite(
+                [...new Set(foundEmails.map(
+                  emailBlob => emailBlob[1]
+                ))]);
+            }).catch((err) => console.error(err));
         })
     })
 };
 
+let fileWrite = (csvData) => {
+  let bizSitesFormatted = csvData.join("\n");
+  let fileName = bizType; 
+
+  fs.writeFile(`${fileName}.csv`, bizSitesFormatted, (err) => {
+    if (err) throw err;
+    console.log('The file has been saved! POG');
+  });
+};
+
+// Run scraper
 const run = async (urls) => {
   const browser = await puppeteer.launch();
 
@@ -74,6 +89,7 @@ const run = async (urls) => {
       // event.
       await page.goto(nextUrl, {
         waitUntil: "domcontentloaded",
+        timeout: 10000
       });
 
       // Get all the links on the page
@@ -82,19 +98,31 @@ const run = async (urls) => {
 
       for (var i = 0; i < links.length; i++) {
         // Get the value of the href property from the link
-        const href = await (await links[i].getProperty("href")).jsonValue();
+        console.log("Start iter");
+        let href = await links[i].getProperty("href");
+        console.log("Found property");
+        href = await href.jsonValue();
+
+        console.log("Found json value");
 
         if (/mailto/gi.test(href)) {
           // The link is a mailto: link, so save it as an email found
           foundEmails.push([nextUrl, href.replace(/mailto:/gi, "")]);
+          currentPageNestedUrls.length = 0;
+          console.log("Found href");
 
           // We don't want to count the link as a searchable page
           continue;
         }
 
+        console.log("Might skip because of nested links");
+        if(i > maxNestedLinks) continue;
+        console.log("Did not skip");
+
         // Check if we should search the found page for more links
         if (currentDepth < maxDepth && href.includes(currDomain)) {
           // We are not at the max depth, add it to the list to be searched
+          console.log("Nested pages found!");
           currentPageNestedUrls.push([href, currentDepth]);
         }
       }
@@ -105,6 +133,8 @@ const run = async (urls) => {
       // Find any emails on the page
       (body.match(/\S+@\S+/g) || []).forEach((email) => {
         // Push the email to the emails array
+        console.log("Email found!");
+        currentPageNestedUrls.length = 0;
         foundEmails.push([nextUrl, email.replace(/^\.|\.$/, "")]);
       });
     } catch (err) {
