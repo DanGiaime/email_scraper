@@ -11,6 +11,9 @@ const maxDepth = 2;
 let numParsed = 0;
 const maxNestedLinks = 10;
 
+const maxEmailsPerSite = 10;
+
+
 let domainRegex = /^(?:https?:\/\/)?(?:[^@\n]+@)?(?:www\.)?([^:\/\n?]+)/img;
 let bizType = "email validity test";
 let inputPath = './test.csv';
@@ -23,7 +26,7 @@ let wrapper = async () => {
     fs.readFile(inputPath, function (err, fileData) {
         return parse(fileData, {columns: false, trim: true}, async function(err, rows) {
             if(err) console.error(err);
-            run(rows.flat().slice(73, 80)).then(() => {
+            run(rows.flat().slice(280, 300)).then(() => {
               console.log(foundEmails);
               return fileWrite(
                 [...new Set(foundEmails.map(
@@ -61,13 +64,13 @@ const promiseTimeout = function(ms, promise){
   ])
 }
 
-
 // Run scraper
 const run = async (urls) => {
   const browser = await puppeteer.launch();
 
   const page = await browser.newPage();
   let currDomain;
+  let numEmailsFoundOnSite = 0;
 
   while (urls.length || currentPageNestedUrls.length) {
     // We shift the nested urls because we need to look at them in the order
@@ -90,6 +93,15 @@ const run = async (urls) => {
 
       // current depth is the depth where url was found + 1
       currentDepth = next[1] + 1;
+    }
+    else {
+      // NOT a nested website, so restart our email count (new site)
+      numEmailsFoundOnSite = 0;
+    }
+
+    if(numEmailsFoundOnSite >= maxEmailsPerSite) {
+      currentPageNestedUrls.length = 0;
+      continue;
     }
 
     // Optimization to help with searching pages twice
@@ -119,6 +131,10 @@ const run = async (urls) => {
       //console.log(`Nested links found: ${links.length}`);
 
       for (var i = 0; i < links.length; i++) {
+        if(numEmailsFoundOnSite >= maxEmailsPerSite) {
+          currentPageNestedUrls.length = 0;
+          continue;
+        }
 
         let href = await promiseTimeout(5000, links[i].getProperty("href"));
         href = await href.jsonValue();
@@ -128,6 +144,7 @@ const run = async (urls) => {
 
           if(emailRegex.test(href)) {
             foundEmails.push([nextUrl, href.match(emailRegex)[0]]);
+            numEmailsFoundOnSite++;
           }
           console.log(foundEmails.map(
             emailBlob => emailBlob[1]
@@ -155,11 +172,22 @@ const run = async (urls) => {
       // MatchAll to get multiple emails in body
       // for..of to go through iterator
       for(const emailBlob of body.matchAll(emailRegex)) {
+        
+        // Leave if we've found enough emails
+        if(numEmailsFoundOnSite >= maxEmailsPerSite) {
+          currentPageNestedUrls.length = 0;
+          continue;
+        }
+
         // Push the email to the emails array
+        
+        // Empty array of nested pages
         currentPageNestedUrls.length = 0;
+
         // index 0 is the full match, the rest of the array is pieces we don't want
         console.log(`EMAIL MATCH FOUND: ${emailBlob[0]}`);
         foundEmails.push([nextUrl, emailBlob[0]]);
+        numEmailsFoundOnSite++;
       };
     } catch (err) {
       // Spit out the error, but continue
