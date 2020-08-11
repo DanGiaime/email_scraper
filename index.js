@@ -12,19 +12,22 @@ let numParsed = 0;
 const maxNestedLinks = 10;
 
 let domainRegex = /^(?:https?:\/\/)?(?:[^@\n]+@)?(?:www\.)?([^:\/\n?]+)/img;
-let bizType = "Hair Salons";
+let bizType = "email validity test";
 let inputPath = './test.csv';
+
+// Sourced from - https://emailregex.com/, 5322 RFC, Javascript version
+const emailRegex = /(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))/g;
 
 // Main function, needed for async
 let wrapper = async () => {
     fs.readFile(inputPath, function (err, fileData) {
         return parse(fileData, {columns: false, trim: true}, async function(err, rows) {
             if(err) console.error(err);
-            run(rows.flat().slice(0, 1)).then(() => {
+            run(rows.flat().slice(73, 80)).then(() => {
               console.log(foundEmails);
               return fileWrite(
                 [...new Set(foundEmails.map(
-                  emailBlob => emailBlob[1]
+                  emailBlob => emailBlob[1].toLowerCase()
                 ))]);
             }).catch((err) => console.error(err));
         })
@@ -40,6 +43,24 @@ let fileWrite = (csvData) => {
     console.log('The file has been saved! POG');
   });
 };
+
+const promiseTimeout = function(ms, promise){
+
+  // Create a promise that rejects in <ms> milliseconds
+  let timeout = new Promise((resolve, reject) => {
+    let id = setTimeout(() => {
+      clearTimeout(id);
+      reject('Timed out in '+ ms + 'ms.')
+    }, ms)
+  })
+
+  // Returns a race between our timeout and the passed in promise
+  return Promise.race([
+    promise,
+    timeout
+  ])
+}
+
 
 // Run scraper
 const run = async (urls) => {
@@ -87,6 +108,7 @@ const run = async (urls) => {
 
       // Navigate to the page and accept DOMContentLoaded instead of a load
       // event.
+
       await page.goto(nextUrl, {
         waitUntil: "domcontentloaded",
         timeout: 10000
@@ -94,35 +116,34 @@ const run = async (urls) => {
 
       // Get all the links on the page
       const links = await page.$$("a");
-      console.log(`Nested links found: ${links.length}`);
+      //console.log(`Nested links found: ${links.length}`);
 
       for (var i = 0; i < links.length; i++) {
-        // Get the value of the href property from the link
-        console.log("Start iter");
-        let href = await links[i].getProperty("href");
-        console.log("Found property");
+
+        let href = await promiseTimeout(5000, links[i].getProperty("href"));
         href = await href.jsonValue();
 
-        console.log("Found json value");
-
         if (/mailto/gi.test(href)) {
-          // The link is a mailto: link, so save it as an email found
-          foundEmails.push([nextUrl, href.replace(/mailto:/gi, "")]);
-          currentPageNestedUrls.length = 0;
-          console.log("Found href");
+          // The link is a mailto: link, so save it as an email found, and DO NOT add to nested links
 
-          // We don't want to count the link as a searchable page
+          if(emailRegex.test(href)) {
+            foundEmails.push([nextUrl, href.match(emailRegex)[0]]);
+          }
+          console.log(foundEmails.map(
+            emailBlob => emailBlob[1]
+          ));
+          currentPageNestedUrls.length = 0;
+
+          // We don't want to count the link as a searchable page, so skip rest of iteration
+
           continue;
         }
 
-        console.log("Might skip because of nested links");
         if(i > maxNestedLinks) continue;
-        console.log("Did not skip");
 
         // Check if we should search the found page for more links
         if (currentDepth < maxDepth && href.includes(currDomain)) {
           // We are not at the max depth, add it to the list to be searched
-          console.log("Nested pages found!");
           currentPageNestedUrls.push([href, currentDepth]);
         }
       }
@@ -131,12 +152,15 @@ const run = async (urls) => {
       const body = await page.evaluate(() => document.body.innerText);
 
       // Find any emails on the page
-      (body.match(/\S+@\S+/g) || []).forEach((email) => {
+      // MatchAll to get multiple emails in body
+      // for..of to go through iterator
+      for(const emailBlob of body.matchAll(emailRegex)) {
         // Push the email to the emails array
-        console.log("Email found!");
         currentPageNestedUrls.length = 0;
-        foundEmails.push([nextUrl, email.replace(/^\.|\.$/, "")]);
-      });
+        // index 0 is the full match, the rest of the array is pieces we don't want
+        console.log(`EMAIL MATCH FOUND: ${emailBlob[0]}`);
+        foundEmails.push([nextUrl, emailBlob[0]]);
+      };
     } catch (err) {
       // Spit out the error, but continue
       console.log(`The following error occurred while searching ${nextUrl}:`);
