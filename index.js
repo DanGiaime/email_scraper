@@ -1,8 +1,8 @@
 const puppeteer = require("puppeteer");
 const fs = require('fs');
-var parse = require('csv-parse');
-
-const foundEmails = [];
+let csvToJson = require('convert-csv-to-json');
+const ObjectsToCsv = require('objects-to-csv');
+ 
 
 const searchedUrls = {};
 const currentPageNestedUrls = [];
@@ -15,36 +15,49 @@ const maxEmailsPerSite = 10;
 
 
 let domainRegex = /^(?:https?:\/\/)?(?:[^@\n]+@)?(?:www\.)?([^:\/\n?]+)/img;
-let bizType = "email validity test";
-let inputPath = './test.csv';
+const fileName = "Big Data Test";
+let inputPath = './Hair_Services_Full.csv';
 
 // Sourced from - https://emailregex.com/, 5322 RFC, Javascript version
 const emailRegex = /(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))/g;
 
 // Main function, needed for async
 let wrapper = async () => {
-    fs.readFile(inputPath, function (err, fileData) {
-        return parse(fileData, {columns: false, trim: true}, async function(err, rows) {
-            if(err) console.error(err);
-            run(rows.flat().slice(280, 300)).then(() => {
-              console.log(foundEmails);
-              return fileWrite(
-                [...new Set(foundEmails.map(
-                  emailBlob => emailBlob[1].toLowerCase()
-                ))]);
-            }).catch((err) => console.error(err));
-        })
-    })
+
+  // Full blobs with websites
+  let bizDataBlobs = csvToJson.fieldDelimiter(';').getJsonFromCsv(inputPath);
+  console.log(bizDataBlobs);
+
+  // Pull out just websites
+  let justSites = bizDataBlobs.slice(0, 3).map(blob => blob.website);
+
+  // Find emails
+  run(justSites).then((foundEmailBlobsDict) => {
+    console.log(foundEmailBlobsDict);
+
+    //COMBINE BLOBS
+    for(const bizDataBlob of bizDataBlobs) {
+      let website = bizDataBlob.website;
+      let emailsSet = foundEmailBlobsDict[website];
+      if(emailsSet) {
+        console.log(`found email ${emailsSet.size}`);
+        bizDataBlob.firstEmail = emailsSet.values().next().value;
+        emailsSet.delete(bizDataBlob.firstEmail);
+        bizDataBlob.emails = emailsSet.size > 0 ? emailsSet : undefined;
+      }
+    }
+
+    return fileWrite(bizDataBlobs.filter(blob => blob.firstEmail));
+  }).catch((err) => console.error(err));
 };
 
-let fileWrite = (csvData) => {
-  let bizSitesFormatted = csvData.join("\n");
-  let fileName = bizType; 
+let fileWrite = async (bizSitesArr) => {
+  const csv = new ObjectsToCsv(bizSitesArr);
 
-  fs.writeFile(`${fileName}.csv`, bizSitesFormatted, (err) => {
-    if (err) throw err;
-    console.log('The file has been saved! POG');
-  });
+  // Save to file:
+  await csv.toDisk(`./${fileName}.csv`);
+
+  console.log("POG POG FILE SAVED POG POG");
 };
 
 const promiseTimeout = function(ms, promise){
@@ -64,13 +77,25 @@ const promiseTimeout = function(ms, promise){
   ])
 }
 
+let addToDictionaryArray = (dict, key, val) => {
+  if(dict[key]) {
+    dict[key].add(val);
+  }
+  else {
+    dict[key] = new Set([val]);
+  }
+}
+
 // Run scraper
 const run = async (urls) => {
+  const websitesToFoundEmails = {};
+
   const browser = await puppeteer.launch();
 
   const page = await browser.newPage();
   let currDomain;
   let numEmailsFoundOnSite = 0;
+  let currMainWebsite;
 
   while (urls.length || currentPageNestedUrls.length) {
     // We shift the nested urls because we need to look at them in the order
@@ -96,6 +121,7 @@ const run = async (urls) => {
     }
     else {
       // NOT a nested website, so restart our email count (new site)
+      currMainWebsite = nextUrl;
       numEmailsFoundOnSite = 0;
     }
 
@@ -143,12 +169,10 @@ const run = async (urls) => {
           // The link is a mailto: link, so save it as an email found, and DO NOT add to nested links
 
           if(emailRegex.test(href)) {
-            foundEmails.push([nextUrl, href.match(emailRegex)[0]]);
+            addToDictionaryArray(websitesToFoundEmails, currMainWebsite, href.match(emailRegex)[0]);
             numEmailsFoundOnSite++;
           }
-          console.log(foundEmails.map(
-            emailBlob => emailBlob[1]
-          ));
+          console.log(websitesToFoundEmails);
           currentPageNestedUrls.length = 0;
 
           // We don't want to count the link as a searchable page, so skip rest of iteration
@@ -186,7 +210,8 @@ const run = async (urls) => {
 
         // index 0 is the full match, the rest of the array is pieces we don't want
         console.log(`EMAIL MATCH FOUND: ${emailBlob[0]}`);
-        foundEmails.push([nextUrl, emailBlob[0]]);
+        addToDictionaryArray(websitesToFoundEmails, currMainWebsite, emailBlob[0]);
+
         numEmailsFoundOnSite++;
       };
     } catch (err) {
@@ -197,6 +222,7 @@ const run = async (urls) => {
   }
 
   await browser.close();
+  return websitesToFoundEmails;
 };
 
 wrapper();
