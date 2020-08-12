@@ -1,8 +1,8 @@
 const puppeteer = require("puppeteer");
+const { Cluster } = require('puppeteer-cluster');
 const fs = require('fs');
 let csvToJson = require('convert-csv-to-json');
 const ObjectsToCsv = require('objects-to-csv');
- 
 
 const searchedUrls = {};
 const currentPageNestedUrls = [];
@@ -10,9 +10,8 @@ const currentPageNestedUrls = [];
 const maxDepth = 2;
 let numParsed = 0;
 const maxNestedLinks = 10;
-
 const maxEmailsPerSite = 10;
-
+const websitesToFoundEmails = {};
 
 let domainRegex = /^(?:https?:\/\/)?(?:[^@\n]+@)?(?:www\.)?([^:\/\n?]+)/img;
 const fileName = "Big Data Test";
@@ -26,15 +25,17 @@ let wrapper = async () => {
 
   // Full blobs with websites
   let bizDataBlobs = await csvToJson.fieldDelimiter(';').getJsonFromCsv(inputPath);
-  bizDataBlobs = bizDataBlobs.slice(200, 400); // - used for testing subsets
+  bizDataBlobs = bizDataBlobs.slice(200, 250
+    ); // - used for testing subsets
   console.log(bizDataBlobs);
 
   // Pull out just websites
   let justSites = bizDataBlobs.map(blob => blob.website);
 
   // Find emails
-  run(justSites).then((foundEmailBlobsDict) => {
+  await run(justSites).then((foundEmailBlobsDict) => {
     console.log(foundEmailBlobsDict);
+    console.log("Gonna combine the blobs now");
 
     //COMBINE BLOBS
     for(const bizDataBlob of bizDataBlobs) {
@@ -60,6 +61,16 @@ let fileWrite = async (bizSitesArr) => {
 
   console.log("POG POG FILE SAVED POG POG");
 };
+
+let siteSearchTask = async (page, data) => {
+  console.log(`Attempting to search: ${data.nextUrl}`)
+  await page.goto(data.nextUrl, {
+    waitUntil: "domcontentloaded",
+    timeout: 10000
+  });        
+  await checkForEmails(page, data);
+  await searchForNestedUrls(page, data);
+}
 
 const promiseTimeout = function(ms, promise){
 
@@ -93,22 +104,25 @@ let isWebsiteProbablySMB = (site) => {
 
 // Run scraper
 const run = async (urls) => {
-  const websitesToFoundEmails = {};
+  const cluster = await Cluster.launch({
+    concurrency: Cluster.CONCURRENCY_CONTEXT,
+    maxConcurrency: 5,
+  });
+  cluster.on('taskerror', (err, data) => {
+    console.log(`Error crawling ${JSON.stringify(data)}: ${err}`);
+});
+  await cluster.task(({page, data}) => siteSearchTask(page, data)).catch(e => console.error(e));
 
-  const browser = await puppeteer.launch();
-
-  const page = await browser.newPage();
   let currDomain;
   let numEmailsFoundOnSite = 0;
   let currMainWebsite;
 
-  while (urls.length || currentPageNestedUrls.length) {
+  while (urls.length > 0) {
     // We shift the nested urls because we need to look at them in the order
     // they were added, so that the depth goes in order. Otherwise, we might
     // cache the page as viewed at the max depth, but we were really supposed to
     // look at it in an earlier depth too, and find nested links.
-    const next = currentPageNestedUrls.shift() || urls.shift();
-    console.log(`Parsed ${next}: Total parsed so far: ${++numParsed}`);
+    const next = urls.shift();
 
     // Assume `next` is a string
     let nextUrl = next;
@@ -116,26 +130,11 @@ const run = async (urls) => {
     // Set the default current depth
     let currentDepth = 1;
 
-    // If `next` is an array, the first element will be the url, and the second
-    // will be the depth at which the url was found originally.
-    if (Array.isArray(next)) {
-      nextUrl = next[0];
-
-      // current depth is the depth where url was found + 1
-      currentDepth = next[1] + 1;
-    }
-    else {
-      // NOT a nested website, so restart our email count (new site)
-      currMainWebsite = nextUrl;
-      numEmailsFoundOnSite = 0;
-      if(!isWebsiteProbablySMB(nextUrl)) {
-        console.log(`${nextUrl} is probably not an SMB`)
-        continue;
-      }
-    }
-
-    if(numEmailsFoundOnSite >= maxEmailsPerSite) {
-      currentPageNestedUrls.length = 0;
+    // NOT a nested website, so restart our email count (new site)
+    currMainWebsite = nextUrl;
+    numEmailsFoundOnSite = 0;
+    if(!isWebsiteProbablySMB(nextUrl)) {
+      console.log(`${nextUrl} is probably not an SMB`)
       continue;
     }
 
@@ -155,74 +154,20 @@ const run = async (urls) => {
 
       // Navigate to the page and accept DOMContentLoaded instead of a load
       // event.
-
-      await page.goto(nextUrl, {
-        waitUntil: "domcontentloaded",
-        timeout: 10000
+      console.log("gonna queue");
+      cluster.queue({
+        numEmailsFoundOnSite: numEmailsFoundOnSite, 
+        maxEmailsPerSite: maxEmailsPerSite, 
+        currentPageNestedUrls: currentPageNestedUrls, 
+        currMainWebsite: currMainWebsite, 
+        currDomain: currDomain,
+        next: next, 
+        nextUrl: nextUrl,
+        currentDepth: currentDepth
       });
+      console.log("queued");
 
-      // Get all the links on the page
-      const links = await page.$$("a");
-      //console.log(`Nested links found: ${links.length}`);
 
-      for (var i = 0; i < links.length; i++) {
-        if(numEmailsFoundOnSite >= maxEmailsPerSite) {
-          currentPageNestedUrls.length = 0;
-          continue;
-        }
-
-        let href = await promiseTimeout(5000, links[i].getProperty("href"));
-        href = await href.jsonValue();
-
-        if (/mailto/gi.test(href)) {
-          // The link is a mailto: link, so save it as an email found, and DO NOT add to nested links
-
-          if(emailRegex.test(href)) {
-            addToDictionaryArray(websitesToFoundEmails, currMainWebsite, href.match(emailRegex)[0]);
-            numEmailsFoundOnSite++;
-          }
-          console.log(websitesToFoundEmails);
-          currentPageNestedUrls.length = 0;
-
-          // We don't want to count the link as a searchable page, so skip rest of iteration
-
-          continue;
-        }
-
-        if(i > maxNestedLinks) continue;
-
-        // Check if we should search the found page for more links
-        if (currentDepth < maxDepth && href.includes(currDomain)) {
-          // We are not at the max depth, add it to the list to be searched
-          currentPageNestedUrls.push([href, currentDepth]);
-        }
-      }
-
-      // Get the whole page text
-      const body = await page.evaluate(() => document.body.innerText);
-
-      // Find any emails on the page
-      // MatchAll to get multiple emails in body
-      // for..of to go through iterator
-      for(const emailBlob of body.matchAll(emailRegex)) {
-        
-        // Leave if we've found enough emails
-        if(numEmailsFoundOnSite >= maxEmailsPerSite) {
-          currentPageNestedUrls.length = 0;
-          continue;
-        }
-
-        // Push the email to the emails array
-        
-        // Empty array of nested pages
-        currentPageNestedUrls.length = 0;
-
-        // index 0 is the full match, the rest of the array is pieces we don't want
-        console.log(`EMAIL MATCH FOUND: ${emailBlob[0]}`);
-        addToDictionaryArray(websitesToFoundEmails, currMainWebsite, emailBlob[0]);
-
-        numEmailsFoundOnSite++;
-      };
     } catch (err) {
       // Spit out the error, but continue
       console.log(`The following error occurred while searching ${nextUrl}:`);
@@ -230,8 +175,94 @@ const run = async (urls) => {
     }
   }
 
-  await browser.close();
+  await cluster.idle();
+  console.log("\n\n\n\nGONNA CLOSE THE CLUSTER NOW WATCH OUT EVERYBODY\n\n\n\n");
+  await cluster.close();
   return websitesToFoundEmails;
+};
+
+
+let searchForNestedUrls = async (page, searchScope) => {
+  let {next, currentDepth, numEmailsFoundOnSite, maxEmailsPerSite, currMainWebsite, currDomain} = searchScope;
+  let currentPageNestedUrls = [];
+
+  if(currentDepth > maxDepth) {
+    return;
+  }
+  
+  // Get all the links on the page
+  const links = await page.$$("a");
+  //console.log(`Nested links found: ${links.length}`);
+
+  for (var i = 0; i < links.length; i++) {
+    if(numEmailsFoundOnSite >= maxEmailsPerSite) {
+      break;
+    }
+
+    let href = await promiseTimeout(5000, links[i].getProperty("href"));
+    href = await href.jsonValue();
+
+    if (/mailto/gi.test(href)) {
+      // The link is a mailto: link, so save it as an email found, and DO NOT add to nested links
+
+      if(emailRegex.test(href)) {
+        addToDictionaryArray(websitesToFoundEmails, currMainWebsite, href.match(emailRegex)[0].toLowerCase());
+        numEmailsFoundOnSite++;
+      }
+      console.log(websitesToFoundEmails);
+      currentPageNestedUrls.length = 0;
+
+      // We don't want to count the link as a searchable page, so skip rest of iteration
+
+      continue;
+    }
+
+    if(i > maxNestedLinks) continue;
+
+    // Check if we should search the found page for more links
+    if (currentDepth < maxDepth && href.includes(currDomain)) {
+      // We are not at the max depth, add it to the list to be searched
+      currentPageNestedUrls.push([href, currentDepth]);
+    }
+  }
+
+  for(nestedUrl of currentPageNestedUrls) {
+    console.log(`Gonna try to search ${nestedUrl}`)
+    let data = {
+      currentDepth: currentDepth + 1,
+      nextUrl: nestedUrl,
+      next: nestedUrl,
+      ...searchScope
+    };
+    await siteSearchTask(page, data);
+    console.log("searched nested page successfully");
+  }
+};
+
+let checkForEmails = async (page, searchScope) => {
+  console.log("checked for emails");
+  let {next, numEmailsFoundOnSite, maxEmailsPerSite, currMainWebsite, currDomain} = searchScope;
+  // Get the whole page text
+  const body = await page.evaluate(() => document.body.innerText);
+
+  // Find any emails on the page
+  // MatchAll to get multiple emails in body
+  // for..of to go through iterator
+  for(const emailBlob of body.matchAll(emailRegex)) {
+    console.log(`found email blobs ${emailBlob} on ${currMainWebsite}`);
+    
+    // Leave if we've found enough emails
+    if(numEmailsFoundOnSite >= maxEmailsPerSite) {
+      break;
+    }
+
+    // index 0 is the full match, the rest of the array is pieces we don't want
+    console.log(`EMAIL MATCH FOUND: ${emailBlob[0]}`);
+    console.log(`dictionary: ${websitesToFoundEmails}`);
+    addToDictionaryArray(websitesToFoundEmails, currMainWebsite, emailBlob[0]);
+
+    numEmailsFoundOnSite++;
+  };
 };
 
 wrapper();
