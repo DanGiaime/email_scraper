@@ -16,7 +16,7 @@ const maxEmailsPerSite = 10;
 
 let domainRegex = /^(?:https?:\/\/)?(?:[^@\n]+@)?(?:www\.)?([^:\/\n?]+)/img;
 const fileName = "Big Data Test";
-let inputPath = './Hair_Services_Full.csv';
+let inputPath = './testy-test.csv';
 
 // Sourced from - https://emailregex.com/, 5322 RFC, Javascript version
 const emailRegex = /(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))/g;
@@ -25,11 +25,12 @@ const emailRegex = /(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))
 let wrapper = async () => {
 
   // Full blobs with websites
-  let bizDataBlobs = csvToJson.fieldDelimiter(';').getJsonFromCsv(inputPath);
+  let bizDataBlobs = await csvToJson.fieldDelimiter(';').getJsonFromCsv(inputPath);
+  bizDataBlobs = bizDataBlobs.slice(200, 400); // - used for testing subsets
   console.log(bizDataBlobs);
 
   // Pull out just websites
-  let justSites = bizDataBlobs.slice(0, 3).map(blob => blob.website);
+  let justSites = bizDataBlobs.map(blob => blob.website);
 
   // Find emails
   run(justSites).then((foundEmailBlobsDict) => {
@@ -43,7 +44,7 @@ let wrapper = async () => {
         console.log(`found email ${emailsSet.size}`);
         bizDataBlob.firstEmail = emailsSet.values().next().value;
         emailsSet.delete(bizDataBlob.firstEmail);
-        bizDataBlob.emails = emailsSet.size > 0 ? emailsSet : undefined;
+        bizDataBlob.emails = emailsSet.size > 0 ? Array.from(emailsSet) : undefined;
       }
     }
 
@@ -86,6 +87,10 @@ let addToDictionaryArray = (dict, key, val) => {
   }
 }
 
+let isWebsiteProbablySMB = (site) => {
+  return site.length < 50;
+}
+
 // Run scraper
 const run = async (urls) => {
   const websitesToFoundEmails = {};
@@ -123,6 +128,10 @@ const run = async (urls) => {
       // NOT a nested website, so restart our email count (new site)
       currMainWebsite = nextUrl;
       numEmailsFoundOnSite = 0;
+      if(!isWebsiteProbablySMB(nextUrl)) {
+        console.log(`${nextUrl} is probably not an SMB`)
+        continue;
+      }
     }
 
     if(numEmailsFoundOnSite >= maxEmailsPerSite) {
