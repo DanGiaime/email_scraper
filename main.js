@@ -116,7 +116,7 @@ const run = async (urls) => {
         url: nextUrl,
         currentDepth: currentDepth
       });
-g
+
     } catch (err) {
       // Spit out the error, but continue
       console.log(`The following error occurred while searching ${nextUrl}:`);
