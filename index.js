@@ -25,8 +25,7 @@ let wrapper = async () => {
 
   // Full blobs with websites
   let bizDataBlobs = await csvToJson.fieldDelimiter(';').getJsonFromCsv(inputPath);
-  bizDataBlobs = bizDataBlobs.slice(200, 250
-    ); // - used for testing subsets
+  bizDataBlobs = bizDataBlobs.slice(0, 30); // - used for testing subsets
   console.log(bizDataBlobs);
 
   // Pull out just websites
@@ -63,10 +62,14 @@ let fileWrite = async (bizSitesArr) => {
 };
 
 let siteSearchTask = async (page, data) => {
-  console.log(`Attempting to search: ${data.nextUrl}`)
+  if (searchedUrls[data.nextUrl]) {
+    // we have already searched this page, don't do it again
+    return;
+  }
+  searchedUrls[data.nextUrl] = true;
+  console.log(`Attempting to search: ${data.nextUrl} at depth ${data.currentDepth}`)
   await page.goto(data.nextUrl, {
-    waitUntil: "domcontentloaded",
-    timeout: 10000
+    waitUntil: "domcontentloaded"
   });        
   await checkForEmails(page, data);
   await searchForNestedUrls(page, data);
@@ -107,10 +110,13 @@ const run = async (urls) => {
   const cluster = await Cluster.launch({
     concurrency: Cluster.CONCURRENCY_CONTEXT,
     maxConcurrency: 5,
+    timeout: 60000,
+    retryLimit: 3,
+    skipDuplicateUrls: true
   });
   cluster.on('taskerror', (err, data) => {
     console.log(`Error crawling ${JSON.stringify(data)}: ${err}`);
-});
+  });
   await cluster.task(({page, data}) => siteSearchTask(page, data)).catch(e => console.error(e));
 
   let currDomain;
@@ -139,10 +145,6 @@ const run = async (urls) => {
     }
 
     // Optimization to help with searching pages twice
-    if (searchedUrls[nextUrl]) {
-      // we have already searched this page, don't do it again
-      continue;
-    }
 
     try {
 
@@ -150,7 +152,6 @@ const run = async (urls) => {
       let currDomain = nextUrl.match(domainRegex);
 
       // Cache the url so we don't search it again in the future
-      searchedUrls[nextUrl] = true;
 
       // Navigate to the page and accept DOMContentLoaded instead of a load
       // event.
@@ -163,6 +164,7 @@ const run = async (urls) => {
         currDomain: currDomain,
         next: next, 
         nextUrl: nextUrl,
+        url: nextUrl,
         currentDepth: currentDepth
       });
       console.log("queued");
@@ -199,7 +201,7 @@ let searchForNestedUrls = async (page, searchScope) => {
       break;
     }
 
-    let href = await promiseTimeout(5000, links[i].getProperty("href"));
+    let href = await promiseTimeout(10000, links[i].getProperty("href"));
     href = await href.jsonValue();
 
     if (/mailto/gi.test(href)) {
@@ -210,8 +212,6 @@ let searchForNestedUrls = async (page, searchScope) => {
         numEmailsFoundOnSite++;
       }
       console.log(websitesToFoundEmails);
-      currentPageNestedUrls.length = 0;
-
       // We don't want to count the link as a searchable page, so skip rest of iteration
 
       continue;
@@ -222,17 +222,18 @@ let searchForNestedUrls = async (page, searchScope) => {
     // Check if we should search the found page for more links
     if (currentDepth < maxDepth && href.includes(currDomain)) {
       // We are not at the max depth, add it to the list to be searched
-      currentPageNestedUrls.push([href, currentDepth]);
+      currentPageNestedUrls.push(href);
     }
   }
 
   for(nestedUrl of currentPageNestedUrls) {
-    console.log(`Gonna try to search ${nestedUrl}`)
+    console.log(`Gonna try to search ${nestedUrl} (nested under) ${currMainWebsite}`)
     let data = {
+      ...searchScope,
       currentDepth: currentDepth + 1,
       nextUrl: nestedUrl,
       next: nestedUrl,
-      ...searchScope
+      url: nestedUrl
     };
     await siteSearchTask(page, data);
     console.log("searched nested page successfully");
