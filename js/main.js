@@ -14,9 +14,8 @@ const {findBizSites, findBizData} = require('./apis');
 const {project } = require('./helpers');
 const {desiredFields} = require('./config');
 const { bizTypes, batchSize } = require('./config');
-
 let {siteSearchTask, searchForNestedUrls, checkForEmails} = require("./scrape");
-const {dataFileFolderName, fileName, inputPath, domainRegex, emailRegex} = require("./config");
+const {fileName, inputPath, domainRegex, emailRegex} = require("./config");
 const {isWebsiteProbablySMB} = require("./helpers");
 
 
@@ -36,7 +35,7 @@ Thinking about how proud of me ppl would be
 */
 
 // Main function, needed for async
-let main = async (bizType) => {
+let main = async (bizType) => {  
 
   // old file read code if needed
   // let bizDataBlobs = await csvToJson.fieldDelimiter(';').getJsonFromCsv(`${dataFileFolderName}\/${inputPath}`);

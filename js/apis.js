@@ -1,5 +1,5 @@
 const {chicagoBizEndpointURL, bingSearchAPIURL, bingSearchAPIURLTail} = require('./constants');
-const {azureAPIKEY} = require('./config');
+const {azureAPIKey} = require('./config');
 const fetch = require('node-fetch');
 const {testData} = require('./constants');
 
@@ -22,7 +22,7 @@ let findBizData = async (bizType) => {
         let bizSiteData = await fetch(bingSearchAPIURL + bizData[i].doing_business_as_name + bingSearchAPIURLTail, {
             method: 'get',
             headers: {
-                "Ocp-Apim-Subscription-Key": azureAPIKEY
+                "Ocp-Apim-Subscription-Key": azureAPIKey
             }
         })
         .then(res => res.json())
