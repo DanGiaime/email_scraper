@@ -2,7 +2,6 @@ const {maxDepth, emailRegex, maxEmailsPerSite, maxNestedLinks} = require("./conf
 const {promiseTimeout, addToDictionaryArray} = require("./helpers");
 
 // Globals
-let websitesToFoundEmails = {};
 let searchedUrls = {};
 
 let siteSearchTask = async (page, data) => {
@@ -26,7 +25,7 @@ let siteSearchTask = async (page, data) => {
 
 let searchForNestedUrls = async (page, searchScope) => {
 
-    let {currentDepth, numEmailsFoundOnSite, currMainWebsite, currDomain} = searchScope;
+    let {currentDepth, numEmailsFoundOnSite, websitesToFoundEmails, currMainWebsite, currDomain} = searchScope;
     let currentPageNestedUrls = [];
   
     if(currentDepth > maxDepth) {
@@ -79,7 +78,7 @@ let searchForNestedUrls = async (page, searchScope) => {
   };
   
 let checkForEmails = async (page, searchScope) => {
-    let {numEmailsFoundOnSite, currMainWebsite} = searchScope;
+    let {numEmailsFoundOnSite, currMainWebsite, websitesToFoundEmails} = searchScope;
     // Get the whole page text
     const body = await page.evaluate(() => document.body.innerText);
 
@@ -93,7 +92,7 @@ let checkForEmails = async (page, searchScope) => {
         }
 
         // index 0 is the full match, the rest of the array is pieces we don't want
-        addToDictionaryArray(websitesToFoundEmails, currMainWebsite, emailBlob[0]);
+        websitesToFoundEmails = addToDictionaryArray(websitesToFoundEmails, currMainWebsite, emailBlob[0]);
 
         numEmailsFoundOnSite++;
     };

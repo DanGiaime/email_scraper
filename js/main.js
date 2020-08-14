@@ -1,12 +1,25 @@
+// GOAL: Get 10,000 emails of hair salons in chicago
+
+// Alternate path to success
+// 1. Get list of business names (+ other data) from Chicago Data API - findBizData()
+// 2. Query Bing Search API (through azure) to get websites - findBizSites(bizNames)
+// 3. Scrape websites and linked pages with email_scraper - run(bizDataBlobs)
+// 4. Send emails through some tool (TBD~)
+
 const puppeteer = require("puppeteer");
 const { Cluster } = require('puppeteer-cluster');
 const fs = require('fs');
 let csvToJson = require('convert-csv-to-json');
 const ObjectsToCsv = require('objects-to-csv');
+const {findBizSites, findBizData} = require('./apis');
+const {project } = require('./helpers');
+const {desiredFields} = require('./config');
 
-let {siteSearchTask, websitesToFoundEmails, searchForNestedUrls, checkForEmails} = require("./scrape");
+let {siteSearchTask, searchForNestedUrls, checkForEmails} = require("./scrape");
 const {dataFileFolderName, fileName, inputPath, domainRegex, emailRegex} = require("./config");
 const {isWebsiteProbablySMB} = require("./helpers");
+
+let websitesToFoundEmails = {};
 
 /*
 Me
@@ -26,10 +39,13 @@ Thinking about how proud of me ppl would be
 // Main function, needed for async
 let main = async () => {
 
+  //let bizDataBlobs = await csvToJson.fieldDelimiter(';').getJsonFromCsv(`${dataFileFolderName}\/${inputPath}`);
+  //bizDataBlobs = bizDataBlobs.slice(0, 100); // - used for testing subsets
+  
   // Full blobs with websites
-  let bizDataBlobs = await csvToJson.fieldDelimiter(';').getJsonFromCsv(`${dataFileFolderName}\/${inputPath}`);
-  //bizDataBlobs = bizDataBlobs.slice(0, 30); // - used for testing subsets
-
+  let bizData = await findBizData();
+  let bizDataPlusSites = await findBizSites(bizData.slice(0, 100));
+  bizDataBlobs = bizDataPlusSites.map(bizDataBlob => project(bizDataBlob, desiredFields));
 
   // Pull out just websites
   let justSites = bizDataBlobs.map(blob => blob.website);
@@ -74,9 +90,9 @@ const run = async (urls) => {
   });
   await cluster.task(({page, data}) => siteSearchTask(page, data)).catch(e => console.error(e));
 
-  let currDomain;
   let numEmailsFoundOnSite = 0;
   let currMainWebsite;
+  let mainSitesVisited = 0;
 
   while (urls.length > 0) {
     // We shift the nested urls because we need to look at them in the order
@@ -84,6 +100,7 @@ const run = async (urls) => {
     // cache the page as viewed at the max depth, but we were really supposed to
     // look at it in an earlier depth too, and find nested links.
     const next = urls.shift();
+    console.log(++mainSitesVisited);
 
     // Assume `next` is a string
     let nextUrl = next;
@@ -111,6 +128,7 @@ const run = async (urls) => {
         numEmailsFoundOnSite: numEmailsFoundOnSite, 
         currMainWebsite: currMainWebsite, 
         currDomain: currDomain,
+        websitesToFoundEmails: websitesToFoundEmails,
         next: next, 
         nextUrl: nextUrl,
         url: nextUrl,
@@ -126,6 +144,8 @@ const run = async (urls) => {
 
   await cluster.idle();
   console.log("\n\n\n\nGONNA CLOSE THE CLUSTER NOW WATCH OUT EVERYBODY\n\n\n\n");
+  console.log("We're about to try to save:");
+  console.log(websitesToFoundEmails);
   await cluster.close();
   return websitesToFoundEmails;
 };
