@@ -6,20 +6,19 @@
 // 3. Scrape websites and linked pages with email_scraper - run(bizDataBlobs)
 // 4. Send emails through some tool (TBD~)
 
-const puppeteer = require("puppeteer");
+const puppeteer = require("puppeteer"); // too scared to delete tbh
 const { Cluster } = require('puppeteer-cluster');
 const fs = require('fs');
-let csvToJson = require('convert-csv-to-json');
 const ObjectsToCsv = require('objects-to-csv');
 const {findBizSites, findBizData} = require('./apis');
 const {project } = require('./helpers');
 const {desiredFields} = require('./config');
+const { bizTypes, batchSize } = require('./config');
 
 let {siteSearchTask, searchForNestedUrls, checkForEmails} = require("./scrape");
 const {dataFileFolderName, fileName, inputPath, domainRegex, emailRegex} = require("./config");
 const {isWebsiteProbablySMB} = require("./helpers");
 
-let websitesToFoundEmails = {};
 
 /*
 Me
@@ -37,14 +36,14 @@ Thinking about how proud of me ppl would be
 */
 
 // Main function, needed for async
-let main = async () => {
+let main = async (bizType) => {
 
-  //let bizDataBlobs = await csvToJson.fieldDelimiter(';').getJsonFromCsv(`${dataFileFolderName}\/${inputPath}`);
-  //bizDataBlobs = bizDataBlobs.slice(0, 100); // - used for testing subsets
+  // old file read code if needed
+  // let bizDataBlobs = await csvToJson.fieldDelimiter(';').getJsonFromCsv(`${dataFileFolderName}\/${inputPath}`);
   
   // Full blobs with websites
-  let bizData = await findBizData();
-  let bizDataPlusSites = await findBizSites(bizData.slice(0, 100));
+  let bizData = await findBizData(bizType);
+  let bizDataPlusSites = await findBizSites(batchSize>0 ? bizData.slice(0, Math.min(batchSize, bizData.length)) : bizData);
   bizDataBlobs = bizDataPlusSites.map(bizDataBlob => project(bizDataBlob, desiredFields));
 
   // Pull out just websites
@@ -63,21 +62,23 @@ let main = async () => {
       }
     }
 
-    return fileWrite(bizDataBlobs.filter(blob => blob.firstEmail));
+    return fileWrite(bizDataBlobs.filter(blob => blob.firstEmail), bizType);
   }).catch((err) => console.error(err));
 };
 
-let fileWrite = async (bizSitesArr) => {
+let fileWrite = async (bizSitesArr, bizType) => {
   const csv = new ObjectsToCsv(bizSitesArr);
 
   // Save to file:
-  await csv.toDisk(`./${fileName}.csv`);
+  await csv.toDisk(`./${fileName}-${bizType}.csv`);
 
-  console.log("POG POG FILE SAVED POG POG");
+  console.log("POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG FILE SAVED POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG");
 };
 
 // Run scraper
 const run = async (urls) => {
+  let websitesToFoundEmails = {};
+
   const cluster = await Cluster.launch({
     concurrency: Cluster.CONCURRENCY_CONTEXT,
     maxConcurrency: 5,
@@ -149,5 +150,10 @@ const run = async (urls) => {
   await cluster.close();
   return websitesToFoundEmails;
 };
+let wrapper = async () => {
+  for(let bizType of bizTypes) {
+    await main(bizType);
+  }
+}
 
-main();
+wrapper();

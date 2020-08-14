@@ -1,11 +1,11 @@
 const {chicagoBizEndpointURL, bingSearchAPIURL, bingSearchAPIURLTail} = require('./constants');
-const azureAPIKEY = "ea21c969a4e64907aa62cc7a56ffbc58";
+const {azureAPIKEY} = require('./config');
 const fetch = require('node-fetch');
 const {testData} = require('./constants');
 
 // Find names of all businesses in chicago
-let findBizData = async () => {
-    let bizData = await fetch(chicagoBizEndpointURL, {
+let findBizData = async (bizType) => {
+    let bizData = await fetch(`${chicagoBizEndpointURL}&business_activity=${encodeURI(bizType)}`, {
           method: 'get',
       })
       .then(res => res.json())
@@ -36,8 +36,8 @@ let findBizData = async () => {
         bizData[i].website = bizSiteData.webPages.value[0].url;
         let match = bizData[i].website.toString().search(/wikipedia|opengov|chicagonow|yimg|twitter|vimeo|instagram|youtube|facebook|fonts|google|amazon|ebay|yahoo|yelp|\.(js|jpg|jpeg|jpe|jif|jfif|jfi|css|gif|png|jp2|j2k|jpf|jpx|jpm|mj2|svg|svgz|pdf|bmp|dib|amp)/g)
         if(match != -1) {
-            bizData
-            .splice(i, 1);
+            console.log(`${bizData[i].website} lookin bad`)
+            bizData.splice(i, 1);
             i--;
         }
     }

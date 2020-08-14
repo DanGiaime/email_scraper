@@ -1,7 +1,5 @@
-const { bizType } = require('./config');
-
 // endpoint for the chicago business data
-const chicagoBizEndpointURL = `https://data.cityofchicago.org/resource/uupf-x98q.json?business_activity=${encodeURI(bizType)}&$limit=2000`;
+let chicagoBizEndpointURL = `https://data.cityofchicago.org/resource/uupf-x98q.json?$limit=2000`;
 
 // bing search api url
 const bingSearchAPIURL = "https://api.cognitive.microsoft.com/bing/v7.0/search?q="
