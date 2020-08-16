@@ -92,7 +92,7 @@ let checkForEmails = async (page, searchScope) => {
         }
 
         // index 0 is the full match, the rest of the array is pieces we don't want
-        websitesToFoundEmails = addToDictionaryArray(websitesToFoundEmails, currMainWebsite, emailBlob[0]);
+        websitesToFoundEmails = addToDictionaryArray(websitesToFoundEmails, currMainWebsite, emailBlob[0].toLowerCase());
 
         numEmailsFoundOnSite++;
     };

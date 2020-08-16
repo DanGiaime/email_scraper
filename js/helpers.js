@@ -60,7 +60,7 @@ module.exports = {
     fileWrite,
     sleep,
     project,
-    promiseTimeout: promiseTimeout,
-    addToDictionaryArray: addToDictionaryArray,
-    isWebsiteProbablySMB: isWebsiteProbablySMB
+    promiseTimeout,
+    addToDictionaryArray,
+    isWebsiteProbablySMB
   };

@@ -10,7 +10,7 @@ const puppeteer = require("puppeteer"); // too scared to delete tbh
 const { Cluster } = require('puppeteer-cluster');
 const fs = require('fs');
 const ObjectsToCsv = require('objects-to-csv');
-const {findBizSites, findBizData} = require('./apis');
+const {findBizSites, findBizData, findBizOwners} = require('./apis');
 const {project } = require('./helpers');
 const {desiredFields} = require('./config');
 const { bizTypes, batchSize } = require('./config');
@@ -49,7 +49,7 @@ let main = async (bizType) => {
   let justSites = bizDataBlobs.map(blob => blob.website);
 
   // Find emails
-  await run(justSites).then((foundEmailBlobsDict) => {
+  await run(justSites).then(async (foundEmailBlobsDict) => {
     //COMBINE BLOBS
     for(const bizDataBlob of bizDataBlobs) {
       let website = bizDataBlob.website;
@@ -59,6 +59,17 @@ let main = async (bizType) => {
         emailsSet.delete(bizDataBlob.firstEmail);
         bizDataBlob.emails = emailsSet.size > 0 ? Array.from(emailsSet) : undefined;
       }
+
+      if(bizDataBlob.firstEmail) {
+        let ownersData = await findBizOwners(bizDataBlob.legal_name);
+        console.log(`Searching for owners @ ${bizDataBlob.legal_name}: ${JSON.stringify(ownersData)}`);
+        if(ownersData.firstOwnerName !== undefined) {
+          console.log("Adding data to blob");
+          bizDataBlob.firstOwnerName = ownersData.firstOwnerName;
+          bizDataBlob.firstOwnerTitle = ownersData.firstOwnerTitle;
+          bizDataBlob.owners = ownersData.owners.length > 0 ? ownersData.owners : undefined;
+        }
+      }
     }
 
     return fileWrite(bizDataBlobs.filter(blob => blob.firstEmail), bizType);
@@ -66,7 +77,7 @@ let main = async (bizType) => {
 };
 
 let fileWrite = async (bizSitesArr, bizType) => {
-  const csv = new ObjectsToCsv(bizSitesArr);
+  const csv = new ObjectsToCsv(bizSitesArr, { allColumns: true });
 
   // Save to file:
   await csv.toDisk(`./${fileName}-${bizType}.csv`);

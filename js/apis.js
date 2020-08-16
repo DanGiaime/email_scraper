@@ -1,19 +1,51 @@
-const {chicagoBizEndpointURL, bingSearchAPIURL, bingSearchAPIURLTail} = require('./constants');
+const {chicagoBizEndpointURL, bingSearchAPIURL, bingSearchAPIURLTail, ownerDesiredFields, chicagoBizOwnerEndpoint} = require('./constants');
+const {project} = require('./helpers');
 const {azureAPIKey} = require('./config');
 const fetch = require('node-fetch');
 const {testData} = require('./constants');
 
+
+
 // Find names of all businesses in chicago
 let findBizData = async (bizType) => {
-    let bizData = await fetch(`${chicagoBizEndpointURL}&business_activity=${encodeURI(bizType)}`, {
-          method: 'get',
-      })
-      .then(res => res.json())
-      .catch(e => console.error(e));
+    // let bizData = await fetch(`${chicagoBizEndpointURL}&business_activity=${encodeURI(bizType)}`, {
+    //       method: 'get',
+    //   })
+    //   .then(res => res.json())
+    //   .catch(e => console.error(e));
+
+    // Search business activity by keyword
+    let bizData = await fetch(`${chicagoBizEndpointURL}`, {
+        method: 'get',
+    })
+    .then(res => res.json())
+    .catch(e => console.error(e));
+    var re = new RegExp(bizType, "i");
+    bizData = bizData.filter(bizData => re.test(bizData.business_activity));
   
     return bizData;
   }
   
+  // Find business owner names
+let findBizOwners = async (bizName) => {
+    let bizData = await fetch(`${chicagoBizOwnerEndpoint}${bizName}`, {
+        method: 'get',
+    })
+    .then(res => res.json())
+    .catch(e => console.error(e));
+
+    let adjustedOwnerData = {owners: []};
+    let [firstOwner, ...otherOwners] = bizData;
+    console.log(`${firstOwner} ${otherOwners}`);
+    adjustedOwnerData.firstOwnerName = `${(firstOwner.owner_first_name || firstOwner.owner_name)} - ${firstOwner.owner_last_name || ""}`;
+    adjustedOwnerData.firstOwnerTitle = `${firstOwner.owner_title}`;
+    if(otherOwners) {
+        adjustedOwnerData.owners = otherOwners.map(ownerData => `${(ownerData.owner_first_name || firstOwner.owner_name)} ${ownerData.owner_last_name} - ${ownerData.owner_title}`);
+    }
+
+    return adjustedOwnerData;
+}
+
   // Find websites of all chicago businesses
   let findBizSites = async (bizData) => {
   
@@ -47,5 +79,6 @@ let findBizData = async (bizType) => {
 
 module.exports = {
     findBizSites,
-    findBizData
+    findBizData,
+    findBizOwners
 };
