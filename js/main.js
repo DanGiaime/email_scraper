@@ -8,15 +8,17 @@
 
 const puppeteer = require("puppeteer"); // too scared to delete tbh
 const { Cluster } = require('puppeteer-cluster');
-const fs = require('fs');
 const ObjectsToCsv = require('objects-to-csv');
-const {findBizSites, findBizData, findBizOwners} = require('./apis');
+const {findBizSitesWithGoogle, findBizSitesWithBing, findbizSitesWithYelp, findBizData, findBizOwners} = require('./apis');
 const {project } = require('./helpers');
 const {desiredFields} = require('./config');
-const { bizTypes, batchSize } = require('./config');
+let { bizTypes, batchSize } = require('./config');
 let {siteSearchTask, searchForNestedUrls, checkForEmails} = require("./scrape");
 const {fileName, inputPath, domainRegex, emailRegex} = require("./config");
 const {isWebsiteProbablySMB} = require("./helpers");
+// const {getTopics} = require('./readtopics');
+const fs = require('fs');
+const parse = require('csv-parse');
 
 
 /*
@@ -42,7 +44,8 @@ let main = async (bizType) => {
   
   // Full blobs with websites
   let bizData = await findBizData(bizType);
-  let bizDataPlusSites = await findBizSites(batchSize>0 ? bizData.slice(0, Math.min(batchSize, bizData.length)) : bizData);
+  let bizDataPlusSites = await findbizSitesWithYelp
+  (batchSize>0 ? bizData.slice(0, Math.min(batchSize, bizData.length)) : bizData);
   bizDataBlobs = bizDataPlusSites.map(bizDataBlob => project(bizDataBlob, desiredFields));
 
   // Pull out just websites
@@ -72,15 +75,29 @@ let main = async (bizType) => {
       }
     }
 
-    return fileWrite(bizDataBlobs.filter(blob => blob.firstEmail), bizType);
+    console.log("We're about to try to save a file");
+    return fileWrite(bizDataBlobs.filter(blob => {
+      if(blob.firstEmail) {
+        return true;
+      }
+      else {
+        console.log(`No email found for: ${JSON.stringify(blob)}`);
+        return false;
+      }
+    }), bizType);
   }).catch((err) => console.error(err));
 };
 
 let fileWrite = async (bizSitesArr, bizType) => {
+  if(Object.keys(bizSitesArr).length < 1) {
+    console.log("Not saving, nothing to save :(");
+    return;
+  }
+
   const csv = new ObjectsToCsv(bizSitesArr, { allColumns: true });
 
   // Save to file:
-  await csv.toDisk(`./${fileName}-${bizType}.csv`);
+  await csv.toDisk(`./${fileName}-${bizType.replace(/\//g, "-").substr(0, 200)}.csv`);
 
   console.log("POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG FILE SAVED POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG");
 };
@@ -160,10 +177,28 @@ const run = async (urls) => {
   await cluster.close();
   return websitesToFoundEmails;
 };
+
 let wrapper = async () => {
-  for(let bizType of bizTypes) {
-    await main(bizType);
+  let readFromTopicsFile = false;
+  if(readFromTopicsFile) {
+    return await fs.readFile('./topics.csv', async function (err, fileData) {
+      await parse(fileData, {columns: false, trim: true}, async function(err, rows) {
+          if(err) console.error(err);
+          bizTypes = rows[0];
+          //console.log(rows);
+          for(let bizType of bizTypes) {
+            await main(bizType);
+          }
+      });
+    })
   }
-}
+  else {
+    console.log(bizTypes);
+    for(let bizType of bizTypes) {
+      console.log(bizType);
+      await main(bizType);
+    }
+  }
+};
 
 wrapper();

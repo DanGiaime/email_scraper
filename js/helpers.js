@@ -31,7 +31,7 @@ const addToDictionaryArray = (dict, key, val) => {
 }
   
 const isWebsiteProbablySMB = (site) => {
-    return site.length < 50;
+    return site != undefined && site.length < 50;
 }
 
 // Write out biz websites to single-column csv (correct format for phantombuster)
