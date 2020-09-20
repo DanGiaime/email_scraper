@@ -50,18 +50,25 @@ let main = async (bizType) => {
   bizDataBlobs = bizDataPlusSites.map(bizDataBlob => project(bizDataBlob, desiredFields));
 
   // Pull out just websites
-  let justSites = bizDataBlobs.map(blob => blob.website);
+  let justSites = bizDataBlobs
+  .filter(blob => blob.websites?.length > 0)
+  .flatMap(blob => blob.websites);
 
   // Find emails
   await run(justSites).then(async (foundEmailBlobsDict) => {
     //COMBINE BLOBS
     for(const bizDataBlob of bizDataBlobs) {
-      let website = bizDataBlob.website;
-      let emailsSet = foundEmailBlobsDict[website];
-      if(emailsSet) {
-        bizDataBlob.firstEmail = emailsSet.values().next().value;
-        emailsSet.delete(bizDataBlob.firstEmail);
-        bizDataBlob.emails = emailsSet.size > 0 ? Array.from(emailsSet) : undefined;
+      let websites = bizDataBlob?.websites;
+      console.log(bizDataBlob);
+      if(websites) {
+        for(let website of websites) {
+          let emailsSet = foundEmailBlobsDict[website];
+          if(emailsSet) {
+            bizDataBlob.firstEmail = emailsSet.values().next().value;
+            emailsSet.delete(bizDataBlob.firstEmail);
+            bizDataBlob.emails = emailsSet.size > 0 ? Array.from(emailsSet) : undefined;
+          }
+        }
       }
 
       if(bizDataBlob.firstEmail) {
@@ -180,7 +187,7 @@ const run = async (urls) => {
 };
 
 let wrapper = async () => {
-  let readFromTopicsFile = false;
+  let readFromTopicsFile = true;
   if(readFromTopicsFile) {
     return await fs.readFile('./topics.csv', async function (err, fileData) {
       await parse(fileData, {columns: false, trim: true}, async function(err, rows) {

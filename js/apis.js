@@ -5,7 +5,7 @@ const fetch = require('node-fetch');
 const {testData, SOURCES} = require('./constants');
 
 const yelpSiteRegex = /"businessWebsite":(\{.*?\})/m;
-const searchByKeyword = true;
+const searchByKeyword = false;
 
 // Find names of all businesses in chicago
 let findBizData = async (bizType) => {
@@ -82,10 +82,17 @@ let findBizOwners = async (bizName) => {
     if(bizSiteData?.webPages?.value?.[0]?.url) {
         console.log(`Bing found site from ${bizData.doing_business_as_name}! - ${bizSiteData.webPages.value[0].url}`);
         // add biz url to existing data payload for business
-        bizData.website = bizSiteData.webPages.value[0].url;
-        let match = bizData.website.toString().search(/wikipedia|opengov|chicagonow|yimg|twitter|vimeo|instagram|youtube|fonts|google|amazon|ebay|yahoo|yelp|\.(js|jpg|jpeg|jpe|jif|jfif|jfi|css|gif|png|jp2|j2k|jpf|jpx|jpm|mj2|svg|svgz|pdf|bmp|dib|amp)/g)
-        if(match != -1) {
-            delete bizData.website;
+        if(bizData.websites?.length > 0) {
+            bizData.websites.push(bizSiteData.webPages.value[0].url);
+        }
+        else {
+            bizData.websites = [bizSiteData.webPages.value[0].url];
+        }
+        for(let i = 0; i < bizData.websites.length; i++) {
+            let match = bizData.websites[i].toString().search(/wikipedia|opengov|chicagonow|yimg|twitter|vimeo|instagram|youtube|fonts|google|amazon|ebay|yahoo|yelp|\.(js|jpg|jpeg|jpe|jif|jfif|jfi|css|gif|png|jp2|j2k|jpf|jpx|jpm|mj2|svg|svgz|pdf|bmp|dib|amp)/g)
+            if(match != -1) {
+                bizData.websites.splice(i, 1);
+            }
         }
     }
 
@@ -123,8 +130,13 @@ let findBizSitesWithGoogle = async (bizData) => {
     }
 
     if(bizSiteData?.result?.website) {
-        console.log(`Google found site from ${bizData.doing_business_as_name}! - ${bizSiteData.result.website}`);
-        bizData.website = bizSiteData.result.website;
+        console.log(`Google found site from ${bizData.doing_business_as_name}! - ${bizSiteData.result.websites}`);
+        if(bizData.websites?.length > 0) {
+            bizData.websites.push(bizSiteData.result.website);
+        }
+        else {
+            bizData.websites = [bizSiteData.result.website];
+        }
     }
     
     console.log(`${JSON.stringify(bizData)}`);
@@ -228,7 +240,12 @@ let findBizSitesWithYelp = async (bizData) => {
     }
     if(bizSite) {
         console.log(`Yelp found site from ${bizData.doing_business_as_name}! - ${bizSite}`);
-        bizData.website = bizSite;
+        if(bizData.websites?.length > 0) {
+            bizData.websites.push(bizSite);
+        }
+        else {
+            bizData.websites = [bizSite];
+        }
     }
     
     //console.log(`BIZDATA AT END OF YELP: ${JSON.stringify(bizData)}`);
@@ -241,10 +258,10 @@ let findBizSitesCascading = async (bizData) => {
     console.log(JSON.stringify(bizData));
     let newData = await findBizSitesWithGoogle(bizData);
     //console.log(JSON.stringify(newData) + "--------" + newData?.website);
-    if(!(newData?.website)) {
-        console.log(`No website found with google for ${bizData.doing_business_as_name}. Moving to yelp.`)
-        newData = await findBizSitesWithYelp(bizData);
-    }
+    // if(!(newData?.websites)) {
+        // console.log(`No website found with google for ${bizData.doing_business_as_name}. Moving to yelp.`)
+    newData = await findBizSitesWithYelp(newData);
+    // }
     // dont check bing, bing is bad
     // if(!(newData?.website)) {
     //     console.log(`No website found with yelp ${bizData.doing_business_as_name}. Moving to bing.`)
