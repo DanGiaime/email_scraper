@@ -9,7 +9,7 @@
 const puppeteer = require("puppeteer"); // too scared to delete tbh
 const { Cluster } = require('puppeteer-cluster');
 const ObjectsToCsv = require('objects-to-csv');
-const {findBizSitesWithGoogle, findBizSitesWithBing, findbizSitesWithYelp, findBizData, findBizOwners} = require('./apis');
+const {findBizSites, findBizData, findBizOwners} = require('./apis');
 const {project } = require('./helpers');
 const {desiredFields} = require('./config');
 let { bizTypes, batchSize } = require('./config');
@@ -19,6 +19,7 @@ const {isWebsiteProbablySMB} = require("./helpers");
 // const {getTopics} = require('./readtopics');
 const fs = require('fs');
 const parse = require('csv-parse');
+const { SOURCES } = require("./constants");
 
 
 /*
@@ -44,7 +45,7 @@ let main = async (bizType) => {
   
   // Full blobs with websites
   let bizData = await findBizData(bizType);
-  let bizDataPlusSites = await findbizSitesWithYelp
+  let bizDataPlusSites = await findBizSites
   (batchSize>0 ? bizData.slice(0, Math.min(batchSize, bizData.length)) : bizData);
   bizDataBlobs = bizDataPlusSites.map(bizDataBlob => project(bizDataBlob, desiredFields));
 

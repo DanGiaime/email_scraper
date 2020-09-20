@@ -29,6 +29,13 @@ const ownerDesiredFields = {
     owner_title: ''
 };
 
+// Different APIs we can use
+const SOURCES = {
+    YELP: 'yelp',
+    GOOGLE: 'google',
+    BING: 'bing'
+}
+
 // Probably won't need this, but might as well keep it around.
 const testData = {
     doing_business_as_name: "spaghetti, inc",
@@ -51,5 +58,6 @@ module.exports = {
     googlePlaceIDAPIUrl,
     googlePlaceDetailsAPIUrl,
     yelpDetailsAPIUrl,
-    yelpMatchAPIUrl
+    yelpMatchAPIUrl,
+    SOURCES
 };
