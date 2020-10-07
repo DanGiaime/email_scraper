@@ -5,25 +5,30 @@ const fetch = require('node-fetch');
 const {testData, SOURCES} = require('./constants');
 
 const yelpSiteRegex = /"businessWebsite":(\{.*?\})/m;
-const searchByKeyword = false;
+const searchByContains = false;
+// const searchByEquals = false;
 
 // Find names of all businesses in chicago
-let findBizData = async (bizType) => {
-    console.log(bizType);
+let findBizData = async (searchValue, searchField) => {
+		// Change searchValue -> search_field and search_value 
+		// change keyword -> contains vs. equals
+		// account for search_field being different
+
+    console.log(searchValue);
     let bizData;
     // Search business activity by keyword
-    if(searchByKeyword) {
+    if(searchByContains) {
         bizData = await fetch(`${chicagoBizEndpointURL}`, {
             method: 'get',
         })
         .then(res => res.json())
         .catch(e => console.error(e));
-        var re = new RegExp(bizType, "gmi");
-        bizData = bizData.filter(bizData => re.test(bizData.business_activity));
+        var re = new RegExp(searchValue, "gmi");
+        bizData = bizData.filter(bizData => re.test(bizData[searchField]));
         console.log(`Businesses found with keyword: ${bizData.length}`);
     }
     else {
-        bizData = await fetch(`${chicagoBizEndpointURL}&business_activity=${encodeURI(bizType)}`, {
+        bizData = await fetch(`${chicagoBizEndpointURL}&${searchField}=${encodeURI(searchValue)}`, {
             method: 'get',
         })
         .then(res => res.json())
@@ -163,9 +168,14 @@ let findBizSitesWithYelp = async (bizData) => {
     .then(res => res.json())
     .catch(e => console.error(e));
     //await sleep(100); // TODO: Delete?
-    console.log(`Searching ${bizData.doing_business_as_name} - ${JSON.stringify(yelpBlob)}
-    
-    `);
+    console.log(`Searching ${bizData.doing_business_as_name} - ${JSON.stringify(yelpBlob)}`);
+
+    if(yelpBlob?.error?.code == "ACCESS_LIMIT_REACHED") {
+        return {
+            "error": "Yelp API Call max exceeded. Shut down immediately.",
+            "action": "SHUT_DOWN"
+        }
+    }
     let bizSite;
     try {
         let yelpID = yelpBlob?.businesses?.[0]?.id;
@@ -256,11 +266,15 @@ let findBizSitesWithYelp = async (bizData) => {
 // Yelp > Google > Bing
 let findBizSitesCascading = async (bizData) => {
     console.log(JSON.stringify(bizData));
-    let newData = await findBizSitesWithGoogle(bizData);
+    let newData = await findBizSitesWithYelp(bizData);
     //console.log(JSON.stringify(newData) + "--------" + newData?.website);
     // if(!(newData?.websites)) {
         // console.log(`No website found with google for ${bizData.doing_business_as_name}. Moving to yelp.`)
-    newData = await findBizSitesWithYelp(newData);
+    if(newData?.error) {
+        return newData;
+    }
+    
+    newData = await findBizSitesWithGoogle(newData);
     // }
     // dont check bing, bing is bad
     // if(!(newData?.website)) {
@@ -294,7 +308,11 @@ let findBizSites = async (bizDataArray, source) => {
     let counter = 0;
     for(let bizDataBlob of bizDataArray) {
         console.log(`Search business number ${++counter} of ${bizDataArray.length}`);
-        newData.push(await findBizSiteFunc(bizDataBlob));
+        let dataOrError = await findBizSiteFunc(bizDataBlob);
+        if(dataOrError?.action == "SHUT_DOWN") {
+            return newData;
+        }
+        newData.push(dataOrError);
     }
 
     return newData;

@@ -12,7 +12,7 @@ const ObjectsToCsv = require('objects-to-csv');
 const {findBizSites, findBizData, findBizOwners} = require('./apis');
 const {project } = require('./helpers');
 const {desiredFields} = require('./config');
-let { bizTypes, batchSize } = require('./config');
+let { searchValues, searchField, batchSize } = require('./config');
 let {siteSearchTask, searchForNestedUrls, checkForEmails} = require("./scrape");
 const {fileName, inputPath, domainRegex, emailRegex} = require("./config");
 const {isWebsiteProbablySMB} = require("./helpers");
@@ -20,6 +20,7 @@ const {isWebsiteProbablySMB} = require("./helpers");
 const fs = require('fs');
 const parse = require('csv-parse');
 const { SOURCES } = require("./constants");
+const { exit } = require("process");
 
 
 /*
@@ -38,13 +39,17 @@ Thinking about how proud of me ppl would be
 */
 
 // Main function, needed for async
-let main = async (bizType) => {  
+let main = async (searchValue, searchField) => {  
 
   // old file read code if needed
   // let bizDataBlobs = await csvToJson.fieldDelimiter(';').getJsonFromCsv(`${dataFileFolderName}\/${inputPath}`);
   
   // Full blobs with websites
-  let bizData = await findBizData(bizType);
+  let bizData = await findBizData(searchValue, searchField);
+  if(bizData.error) {
+    console.error(`Chicago biz api failed, restart at ${searchValue}`);
+    exit(-1);
+  }
   let bizDataPlusSites = await findBizSites
   (batchSize>0 ? bizData.slice(0, Math.min(batchSize, bizData.length)) : bizData);
   bizDataBlobs = bizDataPlusSites.map(bizDataBlob => project(bizDataBlob, desiredFields));
@@ -92,11 +97,11 @@ let main = async (bizType) => {
         console.log(`No email found for: ${JSON.stringify(blob)}`);
         return false;
       }
-    }), bizType);
+    }), searchValue);
   }).catch((err) => console.error(err));
 };
 
-let fileWrite = async (bizSitesArr, bizType) => {
+let fileWrite = async (bizSitesArr, searchValue) => {
   if(Object.keys(bizSitesArr).length < 1) {
     console.log("Not saving, nothing to save :(");
     return;
@@ -105,7 +110,7 @@ let fileWrite = async (bizSitesArr, bizType) => {
   const csv = new ObjectsToCsv(bizSitesArr, { allColumns: true });
 
   // Save to file:
-  await csv.toDisk(`./${fileName}-${bizType.replace(/\//g, "-").substr(0, 200)}.csv`);
+  await csv.toDisk(`./${fileName}-${searchValue.replace(/\//g, "-").substr(0, 200)}.csv`);
 
   console.log("POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG FILE SAVED POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG POG");
 };
@@ -187,24 +192,33 @@ const run = async (urls) => {
 };
 
 let wrapper = async () => {
-  let readFromTopicsFile = true;
+	
+	// Update this func to detect search field
+	// Update .env to have a search_field
+  // Update the actual biz data endpoint search to be generic
+  // Somehow handle multiple input fields? - stretch 
+ 
+  let readFromTopicsFile = false;
   if(readFromTopicsFile) {
     return await fs.readFile('./topics.csv', async function (err, fileData) {
       await parse(fileData, {columns: false, trim: true}, async function(err, rows) {
-          if(err) console.error(err);
-          bizTypes = rows[0];
-          //console.log(rows);
-          for(let bizType of bizTypes) {
-            await main(bizType);
-          }
+        if(err) console.error(err);
+        searchValues = rows[0];
+        //console.log(rows);
+        let startSearchValue = "Engine and Body Work w/ Spray Booth";
+        let startIndex = searchValues.findIndex(x => x == startSearchValue);
+        searchValues = searchValues.slice(startIndex, searchValues.length);
+        for(let searchValue of searchValues) {
+          await main(searchValue);
+        }
       });
     })
   }
   else {
-    console.log(bizTypes);
-    for(let bizType of bizTypes) {
-      console.log(bizType);
-      await main(bizType);
+    console.log(searchValues); // searchValues?
+    for(let searchValue of searchValues) {
+      console.log(searchValue);
+      await main(searchValue, searchField); // call with search field and search value
     }
   }
 };
